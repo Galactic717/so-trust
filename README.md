@@ -1,5 +1,7 @@
 # so-trust
 
+[![CI](https://github.com/Galactic717/so-trust/actions/workflows/ci.yml/badge.svg)](https://github.com/Galactic717/so-trust/actions/workflows/ci.yml)
+
 Stack Overflow answers age and nobody maintains them. `so-trust` tells you, before you paste the code, whether an answer still works **for the versions your project runs**.
 
 Run it inside your project folder. It reads your versions from the lockfile, `requirements.txt`, `package.json` or `pyproject.toml`, searches Stack Overflow through the public Stack Exchange API, and rates each answer `STALE`, `CHECK` or `OK` with the reasons and a source line. One Rust binary, no runtime, no account and no API key. Use it as a command line tool or as an agent skill (`SKILL.md`).
@@ -14,11 +16,21 @@ Run it inside your project folder. It reads your versions from the lockfile, `re
 
 ## Install
 
-```bash
-cargo install --git https://github.com/Galactic717/so-trust
-```
+**Download a binary** from the [Releases page](https://github.com/Galactic717/so-trust/releases), unpack it and put `so-trust` on your PATH:
 
-Or build from a checkout: `git clone https://github.com/Galactic717/so-trust && cd so-trust && cargo build --release`, the binary is `target/release/so-trust`.
+| Platform | File |
+|---|---|
+| Linux x86_64 (glibc 2.35 or newer) | `so-trust-<version>-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux aarch64 (glibc 2.39 or newer) | `so-trust-<version>-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS Apple silicon | `so-trust-<version>-aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `so-trust-<version>-x86_64-apple-darwin.tar.gz` |
+| Windows x86_64 | `so-trust-<version>-x86_64-pc-windows-msvc.zip` |
+
+`SHA256SUMS` lists the checksums. The binaries are not code signed. If macOS or Windows blocks the file, remove the quarantine flag (`xattr -d com.apple.quarantine so-trust` on macOS) or allow it in the system dialog.
+
+**Or build it** with Rust: `cargo install --git https://github.com/Galactic717/so-trust --locked`, or from a checkout `cargo build --release` (the binary is `target/release/so-trust`).
+
+CI builds and tests every push on Ubuntu, macOS and Windows, and the release binaries are built on the same runners. I develop on Windows, so Linux and macOS are covered by CI only: `cargo test`, a smoke run of the binary, and for the Intel Mac build a run through Rosetta. The live API tests run on Windows locally and on request in CI.
 
 As an agent skill, put `SKILL.md` where your agent loads skills (for example `~/.claude/skills/so-trust/`) and keep `so-trust` on PATH.
 

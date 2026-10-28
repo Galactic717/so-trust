@@ -9,7 +9,7 @@ Stack Overflow answers age and nobody maintains them: about 3 in 5 obsolete answ
 
 ## Run
 
-`so-trust` is a single Rust binary and must be on PATH. If `so-trust --version` fails, install it with `cargo install --git https://github.com/Galactic717/so-trust` (needs Rust), or build it from the repository with `cargo build --release`.
+`so-trust` is a single Rust binary and must be on PATH. If `so-trust --version` fails, download the archive for your platform from https://github.com/Galactic717/so-trust/releases (Linux x86_64 or aarch64, macOS Intel or Apple silicon, Windows x86_64) and put the binary on PATH, or build it with `cargo install --git https://github.com/Galactic717/so-trust --locked` (needs Rust).
 
 Run it from the project root: it reads `uv.lock`, `poetry.lock`, `package-lock.json`, `requirements*.txt`, `package.json` and `pyproject.toml` there and prints the versions it found on the first line.
 
