@@ -42,7 +42,8 @@ pub const RULES: &[(&str, &str, &str, &str)] = &[
     (r"base64\.(?:encodestring|decodestring)\(|\.isAlive\(", "python", "3.9", "base64.encodestring/Thread.isAlive"),
     (r"from collections import (?:Mapping|MutableMapping|Sequence|Iterable|Callable|Hashable)\b", "python", "3.10", "collections ABC aliases"),
     (r"inspect\.getargspec\(|asyncio\.coroutine\b", "python", "3.11", "inspect.getargspec/asyncio.coroutine"),
-    (r"^\s*(?:import imp\b|from imp import|import distutils|from distutils)", "python", "3.12", "imp/distutils"),
+    // distutils is left out on purpose: gone from the stdlib in 3.12 but it still imports when setuptools is installed
+    (r"(?:^|>)\s*(?:import imp\b|from imp import)", "python", "3.12", "imp module"), // `>`: first line of a <code> block
     (r"\burllib2\b|\braw_input\(|\bxrange\(|\.has_key\(|\bprint\s+['\x22]|urllib\.(?:urlopen|urlencode|quote)\(", "python", "3.0", "Python 2-only code"),
 ];
 
@@ -133,6 +134,20 @@ fn decode(s: &str) -> String {
     html_escape::decode_html_entities(s).into_owned()
 }
 
+/// Decoded text of an HTML body, plus the byte ranges of it that came from `<pre>` code blocks.
+fn decode_ranges(html: &str) -> (String, Vec<std::ops::Range<usize>>) {
+    let (mut out, mut ranges, mut last) = (String::new(), Vec::new(), 0);
+    for m in re!(r"(?s)<pre[^>]*>.*?</pre>").find_iter(html) {
+        out += &decode(&html[last..m.start()]);
+        let start = out.len();
+        out += &decode(m.as_str());
+        ranges.push(start..out.len());
+        last = m.end();
+    }
+    out += &decode(&html[last..]);
+    (out, ranges)
+}
+
 impl Answer {
     pub fn from_json(v: &Value) -> Answer {
         Answer {
@@ -195,9 +210,12 @@ pub fn assess(ans: &Answer, comments: &[String], pkgs: &Pkgs, ctx: &str, now: i6
     let scan = re!(r"(?s)<pre[^>]*>.*?</pre>").replace_all(&ans.body, |c: &Captures| {
         if tb.is_match(&c[0]) { String::new() } else { c[0].to_string() }
     });
-    let text = decode(&scan);
+    let (text, code) = decode_ranges(&scan);
     let flat = re!(r"<[^>]+>").replace_all(&text, " ");
     let mention = format!("{ctx} {flat}");
+    // In a thread about an error message the answers explain the replacement in prose, so only matches inside code blocks count there.
+    let error_thread = re!(r"(?i)no attribute|cannot import|no module named|importerror|attributeerror|modulenotfounderror|is not a function|is no longer supported").is_match(ctx);
+    let counts = |at: usize| !error_thread || code.iter().any(|c| c.contains(&at));
     let age = (now - ans.created) as f64 / YEAR;
     let idle = (now - ans.edited.unwrap_or(ans.created)) as f64 / YEAR;
     let (mut red, mut yellow) = (Vec::<String>::new(), Vec::<String>::new());
@@ -205,12 +223,12 @@ pub fn assess(ans: &Answer, comments: &[String], pkgs: &Pkgs, ctx: &str, now: i6
     let explain = re!(r"(?i)deprecat|removed|no longer|instead of|replaced|renamed|moved|was located|compat|however, now|used to");
     for r in rules() {
         // a match next to words like "removed" or "instead of" means the answer explains the removal, not recommends the API
-        let hit = r.re.find_iter(&text).find(|m| !explain.is_match(window(&text, m.start(), m.end(), 100, 100)));
+        let hit = r.re.find_iter(&text).find(|m| counts(m.start()) && !explain.is_match(window(&text, m.start(), m.end(), 100, 100)));
         let Some(m) = hit else { continue };
         if !r.needle.is_match(&mention) {
             continue;
         }
-        let found: String = m.as_str().trim().chars().take(40).collect();
+        let found: String = m.as_str().trim_start_matches('>').trim().chars().take(40).collect();
         let what = format!("uses {} (found `{}`), removed in {} {}", r.label, found, r.pkg, r.gone);
         match pkgs.get(r.pkg) {
             None => yellow.push(format!("{what}; pass --pkg {}=VERSION to confirm", r.pkg)),
@@ -548,6 +566,32 @@ mod tests {
         assert_eq!(level(&both, 1.0, &[], &np, "numpy"), Level::Stale);
     }
 
+    #[test]
+    fn in_error_threads_only_code_blocks_count() {
+        let np = [("numpy", "2.0.1")];
+        let err = "AttributeError: module 'numpy' has no attribute 'float' numpy";
+        // prose and inline code: the answer explains the replacement
+        assert_eq!(level("<p>Change <code>np.float</code> to <code>np.float64</code> in your file.</p>", 1.0, &[], &np, err), Level::Ok);
+        assert_eq!(level("<p>For np.int a direct replacement with np.int_ or int is also good.</p>", 1.0, &[], &np, err), Level::Ok);
+        // the same prose in a how-to thread still counts
+        assert_eq!(level("<p>Use <code>np.float(x)</code> to convert.</p>", 1.0, &[], &np, "numpy conversion"), Level::Stale);
+        // a code block that recommends the removed API still counts in an error thread
+        let code = "<p>Try this:</p><pre><code>completion = openai.ChatCompletion.create(model=\"gpt-4\")</code></pre>";
+        let ctx = "AttributeError: module 'openai' has no attribute 'ChatCompletion' openai-api";
+        assert_eq!(level(code, 1.0, &[], &[("openai", "1.40.0")], ctx), Level::Stale);
+        // a reference title is not a recommendation
+        let refs = "<pre><code>big_df = pd.concat(acc)</code></pre><p>References: <a href=\"x\">df.append() is not appending</a></p>";
+        let ctx = "AttributeError: 'DataFrame' object has no attribute 'append' pandas";
+        assert_eq!(level(refs, 1.0, &[], &[("pandas", "2.2.2")], ctx), Level::Ok);
+    }
+
+    #[test]
+    fn distutils_is_not_flagged_but_imp_is() {
+        let py = [("python", "3.14.5")];
+        assert_eq!(level("<pre><code>from distutils.version import LooseVersion</code></pre>", 1.0, &[], &py, "python"), Level::Ok);
+        assert_eq!(level("<pre><code>import imp</code></pre>", 1.0, &[], &py, "python"), Level::Stale);
+    }
+
     /// (rule label, context the question would carry, snippets that must be STALE, snippets that must not)
     #[allow(clippy::type_complexity)]
     fn cases() -> Vec<(&'static str, &'static str, Vec<&'static str>, Vec<&'static str>)> {
@@ -572,7 +616,7 @@ mod tests {
             ("base64.encodestring/Thread.isAlive", "python", vec!["base64.encodestring(b)", "base64.decodestring(b)", "t.isAlive()"], vec!["base64.encodebytes(b)", "t.is_alive()"]),
             ("collections ABC aliases", "python", vec!["from collections import Mapping", "from collections import Iterable"], vec!["from collections.abc import Mapping", "from collections import OrderedDict"]),
             ("inspect.getargspec/asyncio.coroutine", "python", vec!["inspect.getargspec(f)", "@asyncio.coroutine"], vec!["inspect.getfullargspec(f)", "async def f(): pass"]),
-            ("imp/distutils", "python", vec!["import imp", "from imp import reload", "from distutils.core import setup", "import distutils"], vec!["import importlib", "from importlib import reload"]),
+            ("imp module", "python", vec!["import imp", "from imp import reload"], vec!["import importlib", "from importlib import reload", "from distutils.core import setup", "import distutils"]),
             ("Python 2-only code", "python", vec!["print 'hello'", "print \"hello\"", "for i in xrange(3):", "x = raw_input()", "import urllib2", "d.has_key(1)", "urllib.urlopen(u)", "urllib.urlencode(d)"], vec!["print('hello')", "for i in range(3):", "x = input()", "import urllib.request", "urllib.parse.urlencode(d)"]),
         ]
     }
@@ -722,5 +766,21 @@ mod tests {
         assert_eq!(search_pairs("zzzzqqxxnonexistentgibberish987", None, 3).unwrap_err(), "no results");
         let pairs = search_pairs("pandas drop duplicates", Some("pandas"), 2).unwrap();
         assert!(!pairs.is_empty() && comments_for(&pairs).is_ok());
+    }
+
+    /// Real answers from error-message searches (2026-10-28): the first five explain a replacement, the last one recommends the removed API.
+    #[test]
+    #[ignore]
+    fn live_error_thread_regressions() {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+        let pins = pk(&[("pandas", "2.2.2"), ("numpy", "2.0.1"), ("openai", "1.40.0"), ("python", "3.14.5")]);
+        for id in [76_020_727_u64, 74_861_894, 79_338_861, 74_345_066, 74_343_999] {
+            let (q, a) = answer_pair(id).unwrap();
+            let v = assess(&a, &[], &pins, &format!("{} {}", q.tags.join(" "), q.title), now);
+            assert_ne!(v.level, Level::Stale, "a/{id} explains the replacement: {:?}", v.reasons);
+        }
+        let (q, a) = answer_pair(77_292_230).unwrap();
+        let v = assess(&a, &[], &pins, &format!("{} {}", q.tags.join(" "), q.title), now);
+        assert_eq!(v.level, Level::Stale, "a/77292230 recommends openai.ChatCompletion: {:?}", v.reasons);
     }
 }

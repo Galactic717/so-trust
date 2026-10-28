@@ -47,6 +47,9 @@ Read from the Stack Exchange terms on 2026-10-27:
 - On 513 accepted answers from six tags, 53 were `STALE`; reading all 53 by hand found 52 correct and 1 false positive. Recall is not measured. See `evals/RESULTS.md` in the repository.
 - The rule list `RULES` in `src/lib.rs` is small and hand-made (pandas, numpy, scikit-learn, TensorFlow 1.x, pre-1.0 OpenAI SDK, React, Python). A removed API outside it goes unnoticed.
 - A match next to words like "removed" or "instead of" is skipped because the answer is probably explaining the removal.
+- In a thread whose title is an error message, only matches inside code blocks count, because answers there explain the replacement in prose. A second review of error-message searches is in `evals/RESULTS.md`.
+- `distutils` is not flagged: it left the standard library in Python 3.12 but still imports when setuptools is installed.
+- Old but correct fixes get `CHECK` too, and search relevance is Stack Exchange's: `OK` does not mean the thread answers your question.
 - Version ranges in `package.json` and `pyproject.toml` count as their lower bound. Lockfiles are exact.
 - Warning comments come from the 100 most-voted comments across all picked answers, so a quiet answer can lose its warnings.
 - A verdict is a heuristic, not proof that code works or fails.

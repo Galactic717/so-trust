@@ -60,13 +60,13 @@ Covered today: pandas, numpy, scikit-learn, TensorFlow 1.x, the pre-1.0 OpenAI S
 
 ## Evidence
 
-On 513 accepted answers from six tags, 53 were `STALE`. I read all 53: 52 were correct and 1 was a false positive. The first version of the rules scored worse (13 correct out of 18 reviewed), and the three fixes that followed are listed too. Recall is not measured. Method, caveats and how to reproduce it (`cargo run --release --example precision`): [evals/RESULTS.md](evals/RESULTS.md).
+On 513 accepted answers from six tags, 53 were `STALE`. I read all 53: 52 were correct and 1 was a false positive. The first version of the rules scored worse (13 correct out of 18 reviewed), and the three fixes that followed are listed too. Recall is not measured. A second review on error-message searches found that 5 of 6 `STALE` verdicts were false (answers that explain the replacement); that is fixed and covered by regression tests. Method, caveats and how to reproduce it (`cargo run --release --example precision`): [evals/RESULTS.md](evals/RESULTS.md).
 
 ## Tests
 
 ```bash
-cargo test                 # 12 offline tests, no network
-cargo test -- --ignored    # live check against the Stack Exchange API
+cargo test                 # 14 offline tests, no network
+cargo test -- --ignored    # 2 live checks against the Stack Exchange API, incl. regressions on real answers
 ```
 
 The offline tests include one table case per rule (snippets that must be `STALE`, snippets that must not, the same code with an older version, and with an unknown version), every project file format, broken files, and the false positives found in review. A new rule without a test case fails `cargo test`.
@@ -89,6 +89,9 @@ Read from the Stack Exchange pages on 2026-10-27, not legal advice:
 
 - The rule list (`RULES` in `src/lib.rs`) is small and hand-made, so a removed API outside it goes unnoticed.
 - A match next to words like "removed", "deprecated" or "instead of" is skipped because the answer is probably explaining the removal. That also hides real recommendations that use those words nearby.
+- In a thread whose title is an error message, only matches inside code blocks count, because answers there explain the replacement in prose. A removed API recommended only in prose or inline code goes unnoticed.
+- `distutils` is not flagged: it left the standard library in Python 3.12 but still imports when setuptools is installed.
+- Old but correct fixes get `CHECK` too, and search relevance is Stack Exchange's: `OK` does not mean the thread answers your question.
 - Version ranges in `package.json` and `pyproject.toml` are read as their lower bound, so a newer installed version can be missed. Lockfiles are exact.
 - Warning comments come from the 100 most-voted comments across the picked answers, so a quiet answer can lose its warnings.
 - A verdict is a heuristic, not proof that code works or fails.
