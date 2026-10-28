@@ -2,7 +2,7 @@
 
 Stack Overflow answers age and nobody maintains them. `so-trust` tells you, before you paste the code, whether an answer still works **for the versions your project runs**.
 
-Run it inside your project folder. It reads your versions from the lockfile, `requirements.txt`, `package.json` or `pyproject.toml`, searches Stack Overflow through the public Stack Exchange API, and rates each answer `STALE`, `CHECK` or `OK` with the reasons and a source line. One Python file, standard library only, no account and no API key. Works as a command line tool or as an agent skill (`SKILL.md`).
+Run it inside your project folder. It reads your versions from the lockfile, `requirements.txt`, `package.json` or `pyproject.toml`, searches Stack Overflow through the public Stack Exchange API, and rates each answer `STALE`, `CHECK` or `OK` with the reasons and a source line. One Rust binary, no runtime, no account and no API key. Use it as a command line tool or as an agent skill (`SKILL.md`).
 
 ## Why
 
@@ -14,17 +14,13 @@ Run it inside your project folder. It reads your versions from the lockfile, `re
 
 ## Install
 
-Needs Python 3 (tested on 3.14). No packages to install.
-
 ```bash
-git clone https://github.com/Galactic717/so-trust
-cd so-trust
-python so_trust.py --selftest
+cargo install --git https://github.com/Galactic717/so-trust
 ```
 
-With [uv](https://docs.astral.sh/uv/) you can also run it without cloning: `uvx --from git+https://github.com/Galactic717/so-trust so-trust --selftest`.
+Or build from a checkout: `git clone https://github.com/Galactic717/so-trust && cd so-trust && cargo build --release`, the binary is `target/release/so-trust`.
 
-As an agent skill, copy the folder so that `SKILL.md` and `so_trust.py` stay together, for example to `~/.claude/skills/so-trust/`.
+As an agent skill, put `SKILL.md` where your agent loads skills (for example `~/.claude/skills/so-trust/`) and keep `so-trust` on PATH.
 
 ## Use
 
@@ -32,16 +28,16 @@ As an agent skill, copy the folder so that `SKILL.md` and `so_trust.py` stay tog
 cd my-project   # so-trust reads requirements.txt, package.json, uv.lock, ... from here
 
 # search: assess the best answer of each of the top 5 matching questions
-python so_trust.py "AttributeError: 'DataFrame' object has no attribute 'ix'" --tag pandas
+so-trust "AttributeError: 'DataFrame' object has no attribute 'ix'" --tag pandas
 
 # judge one link: stackoverflow.com/a/13842286
-python so_trust.py --answer 13842286
+so-trust --answer 13842286
 ```
 
 Example output for a project that pins `pandas==2.2.0`:
 
 ```
-versions: pandas 2.2.0, python 3.14.5 (requirements.txt; python = running interpreter)
+versions: pandas 2.2.0, python 3.14.5 (requirements.txt; python = `python --version`)
 
 [STALE] Set value for particular cell in pandas DataFrame using index
   answer score 955, accepted, posted 2012-12-12, last edit 2017-09-16
@@ -52,7 +48,7 @@ versions: pandas 2.2.0, python 3.14.5 (requirements.txt; python = running interp
   source: https://stackoverflow.com/a/13842286 - Stack Overflow, CC BY-SA 4.0, by unutbu
 ```
 
-Versions come from lockfiles (`uv.lock`, `poetry.lock`, `package-lock.json`, exact), then `requirements*.txt` pins, then `package.json` / `pyproject.toml` (lower bound of the range). `python` is the interpreter running the script. Use `--project DIR` to read another folder and `--pkg NAME=VERSION` (repeatable) to override.
+Versions come from lockfiles (`uv.lock`, `poetry.lock`, `package-lock.json`, exact), then `requirements*.txt` pins, then `package.json` / `pyproject.toml` (lower bound of the range). `python` is read from `python --version` when Python is on PATH. Use `--project DIR` to read another folder and `--pkg NAME=VERSION` (repeatable) to override. Exit codes: 0 done, 1 runtime error (API error, no results, answer not found), 2 bad arguments.
 
 | Verdict | Meaning |
 |---|---|
@@ -64,7 +60,16 @@ Covered today: pandas, numpy, scikit-learn, TensorFlow 1.x, the pre-1.0 OpenAI S
 
 ## Evidence
 
-On 513 accepted answers from six tags, 53 were `STALE`. I read all 53: 52 were correct and 1 was a false positive. The first version of the rules scored worse (13 correct out of 18 reviewed), and the three fixes that followed are listed too. Recall is not measured. Method, caveats and a script to reproduce it: [evals/RESULTS.md](evals/RESULTS.md).
+On 513 accepted answers from six tags, 53 were `STALE`. I read all 53: 52 were correct and 1 was a false positive. The first version of the rules scored worse (13 correct out of 18 reviewed), and the three fixes that followed are listed too. Recall is not measured. Method, caveats and how to reproduce it (`cargo run --release --example precision`): [evals/RESULTS.md](evals/RESULTS.md).
+
+## Tests
+
+```bash
+cargo test                 # 12 offline tests, no network
+cargo test -- --ignored    # live check against the Stack Exchange API
+```
+
+The offline tests include one table case per rule (snippets that must be `STALE`, snippets that must not, the same code with an older version, and with an unknown version), every project file format, broken files, and the false positives found in review. A new rule without a test case fails `cargo test`.
 
 ## How it works
 
@@ -82,7 +87,7 @@ Read from the Stack Exchange pages on 2026-10-27, not legal advice:
 
 ## Limits
 
-- The rule list (`RULES` in `so_trust.py`) is small and hand-made, so a removed API outside it goes unnoticed.
+- The rule list (`RULES` in `src/lib.rs`) is small and hand-made, so a removed API outside it goes unnoticed.
 - A match next to words like "removed", "deprecated" or "instead of" is skipped because the answer is probably explaining the removal. That also hides real recommendations that use those words nearby.
 - Version ranges in `package.json` and `pyproject.toml` are read as their lower bound, so a newer installed version can be missed. Lockfiles are exact.
 - Warning comments come from the 100 most-voted comments across the picked answers, so a quiet answer can lose its warnings.
@@ -90,13 +95,13 @@ Read from the Stack Exchange pages on 2026-10-27, not legal advice:
 
 ## Contributing
 
-The most useful pull request adds a removed API to `RULES`: a regex, the package, the first release without it, and a short label.
+The most useful pull request adds a removed API to `RULES` in `src/lib.rs`: a regex, the package, the first release without it, and a short label.
 
-```python
+```rust
 (r"ReactDOM\.render\(", "react", "19.0", "ReactDOM.render"),
 ```
 
-Add a case to `selftest()` and run `python so_trust.py --selftest`.
+Add a matching entry to `cases()` in the tests and run `cargo test`.
 
 ## License
 

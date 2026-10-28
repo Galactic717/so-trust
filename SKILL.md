@@ -9,17 +9,18 @@ Stack Overflow answers age and nobody maintains them: about 3 in 5 obsolete answ
 
 ## Run
 
-`so_trust.py` sits next to this file. Python 3 (tested on 3.14), standard library only. Run it from the project root: it reads `uv.lock`, `poetry.lock`, `package-lock.json`, `requirements*.txt`, `package.json` and `pyproject.toml` there and prints the versions it found on the first line.
+`so-trust` is a single Rust binary and must be on PATH. If `so-trust --version` fails, install it with `cargo install --git https://github.com/Galactic717/so-trust` (needs Rust), or build it from the repository with `cargo build --release`.
+
+Run it from the project root: it reads `uv.lock`, `poetry.lock`, `package-lock.json`, `requirements*.txt`, `package.json` and `pyproject.toml` there and prints the versions it found on the first line.
 
 ```bash
-python so_trust.py "ImportError: cannot import name 'soft_unicode' from 'markupsafe'" --tag python
-python so_trust.py --answer 13842286                  # judge one link: stackoverflow.com/a/13842286
-python so_trust.py "query" --project path/to/app      # read versions from another folder
-python so_trust.py "query" --pkg pandas=2.2.0         # override or add a version
-python so_trust.py --selftest                         # offline check of the verdict logic
+so-trust "ImportError: cannot import name 'soft_unicode' from 'markupsafe'" --tag python
+so-trust --answer 13842286                  # judge one link: stackoverflow.com/a/13842286
+so-trust "query" --project path/to/app      # read versions from another folder
+so-trust "query" --pkg pandas=2.2.0         # override or add a version
 ```
 
-Check the `versions:` line. If a library the answer is about is missing, pass `--pkg NAME=VERSION` with the version from the project; names are `pandas`, `numpy`, `scikit-learn`, `tensorflow`, `openai`, `react`, `python`.
+Check the `versions:` line. If a library the answer is about is missing, pass `--pkg NAME=VERSION` with the version from the project; names are `pandas`, `numpy`, `scikit-learn`, `tensorflow`, `openai`, `react`, `python`. `python` is read from `python --version` when Python is on PATH.
 
 ## Verdicts
 
@@ -29,20 +30,22 @@ Check the `versions:` line. If a library the answer is about is missing, pass `-
 
 Each result prints the reasons, up to two warning comments, the first code block (12 lines) and a source line. When you quote an answer to the user, keep the source line: Stack Overflow content is CC BY-SA 4.0 and needs attribution.
 
+Exit codes: 0 done, 1 runtime error (API error, no results, answer not found), 2 bad arguments.
+
 ## Rules for using the API
 
 Read from the Stack Exchange terms on 2026-10-27:
 
 - Use the API only. The network terms forbid copying site content outside the API for commercial use, and the API itself is exempt from that clause. Do not scrape stackoverflow.com; Cloudflare returns 403 to plain clients anyway.
-- Attribution is required: text URLs are enough when there is no browser UI. The script prints them.
-- Throttles: at most 30 requests per second per IP, honour the `backoff` field, never repeat an identical request within a minute. The script caches responses in the system temp directory for 1 hour.
+- Attribution is required: text URLs are enough when there is no browser UI. The tool prints them.
+- Throttles: at most 30 requests per second per IP, honour the `backoff` field, never repeat an identical request within a minute. The tool caches responses in the system temp directory for 1 hour.
 - Quota: 300 requests per day anonymous (checked live), 10,000 with an app key. Set `SE_API_KEY` to use a key. One search costs 3 requests.
 - The API terms say nothing about LLM use or persistent caching. Do not bulk-harvest, redistribute or train on the output. This is a reading of the public pages, not legal advice.
 
 ## Evidence and limits
 
 - On 513 accepted answers from six tags, 53 were `STALE`; reading all 53 by hand found 52 correct and 1 false positive. Recall is not measured. See `evals/RESULTS.md` in the repository.
-- The rule list `RULES` is small and hand-made (pandas, numpy, scikit-learn, TensorFlow 1.x, pre-1.0 OpenAI SDK, React, Python). A removed API outside it goes unnoticed.
+- The rule list `RULES` in `src/lib.rs` is small and hand-made (pandas, numpy, scikit-learn, TensorFlow 1.x, pre-1.0 OpenAI SDK, React, Python). A removed API outside it goes unnoticed.
 - A match next to words like "removed" or "instead of" is skipped because the answer is probably explaining the removal.
 - Version ranges in `package.json` and `pyproject.toml` count as their lower bound. Lockfiles are exact.
 - Warning comments come from the 100 most-voted comments across all picked answers, so a quiet answer can lose its warnings.

@@ -1,6 +1,8 @@
 # Precision review
 
-Date: 2026-10-27. Reproduce with `python evals/precision.py` (live data, so numbers can drift a little).
+Date: 2026-10-27. Reproduce with `cargo run --release --example precision` (live data, so numbers can drift a little).
+
+The review was done on the Python build (v0.2). The tool was then rewritten in Rust (v0.3): the Rust build gives the same totals (513 / 53 / 395 / 65) and printed output identical character for character on six inputs (three single answers, three searches).
 
 ## Setup
 

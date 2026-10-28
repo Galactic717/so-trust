@@ -1,0 +1,22 @@
+[package]
+name = "so-trust"
+version = "0.3.0"
+edition = "2021"
+description = "Rate how far a Stack Overflow answer can be trusted today: STALE / CHECK / OK verdicts via the public Stack Exchange API"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/Galactic717/so-trust"
+keywords = ["stackoverflow", "stack-exchange", "agent-skill", "deprecated", "cli"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+html-escape = "0.2"
+regex = "1"
+serde_json = "1"
+toml = "0.8"
+ureq = "2"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
